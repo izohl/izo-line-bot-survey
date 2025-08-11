@@ -1,0 +1,17 @@
+{
+  "name": "izo-line-bot-survey",
+  "version": "1.0.0",
+  "description": "IZO LINE Bot 問卷系統",
+  "main": "api/webhook.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@line/bot-sdk": "^7.5.2",
+    "googleapis": "^128.0.0"
+  },
+  "keywords": ["line-bot", "survey", "vercel"],
+  "author": "IZO Team",
+  "license": "MIT"
+}
