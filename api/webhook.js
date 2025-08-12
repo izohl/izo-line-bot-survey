@@ -195,20 +195,52 @@ async function handleTextMessage(userId, message) {
         userState.answers[currentQuestion.id] = [];
       }
       userState.answers[currentQuestion.id].push(message);
+      
+      // 記錄答案到 Google Sheets
+      await logToSheet('用戶回答', userId, currentQuestion.id, message);
+      
+      // 對於多選題，發送確認訊息並等待用戶繼續選擇或完成
+      const remainingOptions = currentQuestion.options.filter(option => 
+        !userState.answers[currentQuestion.id].includes(option)
+      );
+      
+      if (remainingOptions.length > 0) {
+        // 還有選項可以選擇
+        await client.pushMessage(userId, {
+          type: 'text',
+          text: `已選擇：${userState.answers[currentQuestion.id].join(', ')}\n\n還可選擇：${remainingOptions.join(', ')}\n\n請繼續選擇，或輸入「下一題」進入下一題。`
+        });
+      } else {
+        // 所有選項都已選擇，自動進入下一題
+        await client.pushMessage(userId, {
+          type: 'text',
+          text: `已選擇：${userState.answers[currentQuestion.id].join(', ')}\n\n進入下一題...`
+        });
+        
+        // 檢查是否還有下一題
+        if (userState.currentQuestion < SURVEY_QUESTIONS.length) {
+          userState.currentQuestion++;
+          await sendQuestion(userId, userState.currentQuestion);
+        } else {
+          // 問卷完成
+          await completeSurvey(userId);
+        }
+      }
     } else {
+      // 單選題
       userState.answers[currentQuestion.id] = message;
-    }
+      
+      // 記錄答案到 Google Sheets
+      await logToSheet('用戶回答', userId, currentQuestion.id, message);
 
-    // 記錄答案到 Google Sheets
-    await logToSheet('用戶回答', userId, currentQuestion.id, message);
-
-    // 檢查是否還有下一題
-    if (userState.currentQuestion < SURVEY_QUESTIONS.length) {
-      userState.currentQuestion++;
-      await sendQuestion(userId, userState.currentQuestion);
-    } else {
-      // 問卷完成
-      await completeSurvey(userId);
+      // 檢查是否還有下一題
+      if (userState.currentQuestion < SURVEY_QUESTIONS.length) {
+        userState.currentQuestion++;
+        await sendQuestion(userId, userState.currentQuestion);
+      } else {
+        // 問卷完成
+        await completeSurvey(userId);
+      }
     }
     
   } catch (error) {
@@ -322,10 +354,12 @@ async function saveQuestionnaireResult(userId, userState) {
       timestamp // H: 完成時間
     ]];
 
+    console.log('準備儲存的資料:', values[0]); // 加入除錯訊息
+
     await sheets.spreadsheets.values.append({
       auth: authClient,
       spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
-      range: '問卷結果!A:H',
+      range: '問卷結果!A:H', // 確保範圍是 A:H
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: { values }
@@ -335,5 +369,7 @@ async function saveQuestionnaireResult(userId, userState) {
     
   } catch (error) {
     console.error('Save Result Error:', error);
+    console.error('用戶狀態:', userState);
+    console.error('準備的資料:', values);
   }
 }
