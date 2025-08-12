@@ -1,4 +1,4 @@
-const { Client } = require('@line/bot-sdk');
+const { Client, middleware } = require('@line/bot-sdk');
 const { google } = require('googleapis');
 
 // LINE Bot 設定
@@ -94,8 +94,11 @@ module.exports = async (req, res) => {
   // 處理 POST 請求（LINE webhook）
   if (req.method === 'POST') {
     try {
-      // 驗證 LINE 簽名
-      if (!client.verify(req.body, req.headers['x-line-signature'])) {
+      // 使用 middleware 驗證 LINE 簽名
+      const lineMiddleware = middleware(config);
+      
+      // 驗證簽名
+      if (!lineMiddleware.verify(req.body, req.headers['x-line-signature'])) {
         console.error('Invalid signature');
         return res.status(401).json({ error: 'Invalid signature' });
       }
@@ -265,7 +268,7 @@ async function completeSurvey(userId) {
     // 發送完成訊息
     const completionMessage = {
       type: 'text',
-      text: '🎉 問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!\n\n�� 提示：輸入「測試問題」可以重新開始問卷。'
+      text: '🎉 問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!\n\n 提示：輸入「測試問題」可以重新開始問卷。'
     };
     
     await client.pushMessage(userId, completionMessage);
