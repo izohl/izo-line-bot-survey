@@ -79,7 +79,7 @@ const userStates = new Map();
 // 建立 LINE Bot 客戶端
 const client = new Client(config);
 
-// 延遲函數
+// 延遲函數 - 大幅增加延遲時間
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -149,7 +149,7 @@ async function handleFollowEvent(userId) {
     startTime: new Date().toISOString()
   });
   await client.pushMessage(userId, { type: 'text', text: '您好!歡迎加入IZO運動館!請問您的姓名是?' });
-  await delay(1000); // 延遲 1 秒
+  await delay(3000); // 延遲 3 秒
   await logToSheet('發送問題', userId, 1, '姓名');
 }
 
@@ -170,7 +170,7 @@ async function handleTextMessage(userId, message) {
         type: 'text',
         text: '🧪 測試模式啟動！開始問卷...'
       });
-      await delay(1000); // 延遲 1 秒
+      await delay(3000); // 延遲 3 秒
       
       // 發送第一題
       await sendQuestion(userId, 1);
@@ -191,7 +191,7 @@ async function handleTextMessage(userId, message) {
       };
       userStates.set(userId, userState);
       await client.pushMessage(userId, { type: 'text', text: '您好!歡迎加入IZO運動館!請問您的姓名是?' });
-      await delay(1000); // 延遲 1 秒
+      await delay(3000); // 延遲 3 秒
       await logToSheet('發送問題', userId, 1, '姓名');
       return;
     }
@@ -218,8 +218,8 @@ async function handleTextMessage(userId, message) {
       await completeSurvey(userId);
       userStates.delete(userId); // 清除用戶狀態
     } else {
-      // 延遲 1 秒後發送下一題
-      await delay(1000);
+      // 延遲 4 秒後發送下一題（大幅增加延遲）
+      await delay(4000);
       await sendQuestion(userId, userState.currentQuestion);
     }
   } catch (error) {
@@ -256,7 +256,7 @@ async function sendQuestion(userId, questionNumber) {
     }
 
     await client.pushMessage(userId, message);
-    await delay(500); // 延遲 0.5 秒
+    await delay(3000); // 延遲 3 秒
     await logToSheet('發送問題', userId, question.id, question.text);
   } catch (error) {
     console.error('Send Question Error:', error);
@@ -271,7 +271,7 @@ async function completeSurvey(userId) {
     if (userState) {
       await saveQuestionnaireResult(userId, userState);
       await client.pushMessage(userId, { type: 'text', text: '🎉 問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!\n\n 提示：輸入「測試問題」可以重新開始問卷。' });
-      await delay(1000); // 延遲 1 秒
+      await delay(3000); // 延遲 3 秒
       await logToSheet('問卷完成', userId, 0, '問卷已完成');
     }
   } catch (error) {
