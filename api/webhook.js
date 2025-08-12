@@ -175,7 +175,7 @@ async function handleTextMessage(userId, message) {
       
       // 記錄測試重置
       await logToSheet('測試重置', userId, 0, '測試問題指令');
-      return;
+      return; // 重要：這裡要 return，避免繼續執行
     }
 
     const userState = userStates.get(userId);
