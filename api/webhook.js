@@ -190,7 +190,7 @@ async function handleTextMessage(userId, message) {
     
     // 儲存答案
     if (currentQuestion.type === 'quick_reply') {
-      // 處理多選答案
+      // 處理多選答案 - 簡化邏輯
       if (!userState.answers[currentQuestion.id]) {
         userState.answers[currentQuestion.id] = [];
       }
@@ -199,32 +199,13 @@ async function handleTextMessage(userId, message) {
       // 記錄答案到 Google Sheets
       await logToSheet('用戶回答', userId, currentQuestion.id, message);
       
-      // 對於多選題，發送確認訊息並等待用戶繼續選擇或完成
-      const remainingOptions = currentQuestion.options.filter(option => 
-        !userState.answers[currentQuestion.id].includes(option)
-      );
-      
-      if (remainingOptions.length > 0) {
-        // 還有選項可以選擇
-        await client.pushMessage(userId, {
-          type: 'text',
-          text: `已選擇：${userState.answers[currentQuestion.id].join(', ')}\n\n還可選擇：${remainingOptions.join(', ')}\n\n請繼續選擇，或輸入「下一題」進入下一題。`
-        });
+      // 自動進入下一題（簡化多選處理）
+      if (userState.currentQuestion < SURVEY_QUESTIONS.length) {
+        userState.currentQuestion++;
+        await sendQuestion(userId, userState.currentQuestion);
       } else {
-        // 所有選項都已選擇，自動進入下一題
-        await client.pushMessage(userId, {
-          type: 'text',
-          text: `已選擇：${userState.answers[currentQuestion.id].join(', ')}\n\n進入下一題...`
-        });
-        
-        // 檢查是否還有下一題
-        if (userState.currentQuestion < SURVEY_QUESTIONS.length) {
-          userState.currentQuestion++;
-          await sendQuestion(userId, userState.currentQuestion);
-        } else {
-          // 問卷完成
-          await completeSurvey(userId);
-        }
+        // 問卷完成
+        await completeSurvey(userId);
       }
     } else {
       // 單選題
