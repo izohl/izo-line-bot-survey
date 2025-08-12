@@ -155,16 +155,37 @@ async function handleFollowEvent(userId) {
 // 處理文字訊息
 async function handleTextMessage(userId, message) {
   try {
-    const userState = userStates.get(userId);
-    
-    if (!userState) {
-      // 如果沒有狀態，重新開始問卷
+    // 檢查特殊指令
+    if (message === '測試問題') {
+      // 重置用戶狀態並開始問卷
       userStates.set(userId, {
         currentQuestion: 1,
         answers: {},
         startTime: new Date().toISOString()
       });
+      
+      // 發送開始訊息
+      await client.pushMessage(userId, {
+        type: 'text',
+        text: '🧪 測試模式啟動！開始問卷...'
+      });
+      
+      // 發送第一題
       await sendQuestion(userId, 1);
+      
+      // 記錄測試重置
+      await logToSheet('測試重置', userId, 0, '測試問題指令');
+      return;
+    }
+
+    const userState = userStates.get(userId);
+    
+    if (!userState) {
+      // 如果沒有狀態，發送說明訊息
+      await client.pushMessage(userId, {
+        type: 'text',
+        text: '您好！請輸入「測試問題」來開始問卷，或直接回答問題。'
+      });
       return;
     }
 
@@ -244,7 +265,7 @@ async function completeSurvey(userId) {
     // 發送完成訊息
     const completionMessage = {
       type: 'text',
-      text: '問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!'
+      text: '🎉 問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!\n\n�� 提示：輸入「測試問題」可以重新開始問卷。'
     };
     
     await client.pushMessage(userId, completionMessage);
