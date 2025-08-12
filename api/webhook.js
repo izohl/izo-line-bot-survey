@@ -34,31 +34,31 @@ const SURVEY_QUESTIONS = [
   {
     id: 2,
     text: '請問您的年齡是?',
-    type: 'quick_reply',
+    type: 'button',
     options: ['18-25', '26-35', '36-45', '46+']
   },
   {
     id: 3,
     text: '您最喜歡的運動項目是?(可多選)',
-    type: 'quick_reply',
+    type: 'button',
     options: ['重訓', '有氧', '瑜珈', '游泳', '其他']
   },
   {
     id: 4,
     text: '您希望收到什麼樣的健身資訊?(可多選)',
-    type: 'quick_reply',
+    type: 'button',
     options: ['課程資訊', '營養建議', '運動技巧', '優惠活動']
   },
   {
     id: 5,
     text: '您通常什麼時間可以運動?(可多選)',
-    type: 'quick_reply',
+    type: 'button',
     options: ['早上', '下午', '晚上']
   },
   {
     id: 6,
     text: '您有特別的健身目標嗎?',
-    type: 'quick_reply',
+    type: 'button',
     options: ['減重', '增肌', '健康維持', '其他']
   }
 ];
@@ -189,7 +189,7 @@ async function handleTextMessage(userId, message) {
     const currentQuestion = SURVEY_QUESTIONS[userState.currentQuestion - 1];
     
     // 儲存答案
-    if (currentQuestion.type === 'quick_reply') {
+    if (currentQuestion.type === 'button') {
       // 處理多選答案 - 簡化邏輯
       if (!userState.answers[currentQuestion.id]) {
         userState.answers[currentQuestion.id] = [];
@@ -235,22 +235,27 @@ async function sendQuestion(userId, questionNumber) {
     const question = SURVEY_QUESTIONS[questionNumber - 1];
     let message;
 
-    if (question.type === 'quick_reply') {
-      // 建立 Quick Reply 按鈕 - 使用更大的字體
-      const quickReplyItems = question.options.map(option => ({
+    if (question.type === 'button') {
+      // 建立 Button Template - 大按鈕，文字清晰
+      const buttons = question.options.map(option => ({
         type: 'action',
         action: {
           type: 'message',
           label: option,
           text: option
-        }
+        },
+        style: 'primary', // 主要按鈕樣式
+        color: '#FF6B6B' // 自定義顏色
       }));
 
       message = {
-        type: 'text',
-        text: `第${questionNumber}題: ${question.text}`,
-        quickReply: {
-          items: quickReplyItems
+        type: 'template',
+        altText: `第${questionNumber}題: ${question.text}`,
+        template: {
+          type: 'buttons',
+          title: `第${questionNumber}題`,
+          text: question.text,
+          actions: buttons
         }
       };
     } else {
