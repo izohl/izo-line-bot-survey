@@ -33,30 +33,40 @@ const SURVEY_QUESTIONS = [
   },
   {
     id: 2,
+    text: '請問您的電話號碼是?',
+    type: 'text'
+  },
+  {
+    id: 3,
+    text: '請問您的Email是?',
+    type: 'text'
+  },
+  {
+    id: 4,
     text: '請問您的年齡是?',
     type: 'quick_reply',
     options: ['18-25', '26-35', '36-45', '46+']
   },
   {
-    id: 3,
+    id: 5,
     text: '您最喜歡的運動項目是?(可多選)',
     type: 'quick_reply',
     options: ['重訓', '有氧', '瑜珈', '游泳', '其他']
   },
   {
-    id: 4,
+    id: 6,
     text: '您希望收到什麼樣的健身資訊?(可多選)',
     type: 'quick_reply',
     options: ['課程資訊', '營養建議', '運動技巧', '優惠活動']
   },
   {
-    id: 5,
+    id: 7,
     text: '您通常什麼時間可以運動?(可多選)',
     type: 'quick_reply',
     options: ['早上', '下午', '晚上']
   },
   {
-    id: 6,
+    id: 8,
     text: '您有特別的健身目標嗎?',
     type: 'quick_reply',
     options: ['減重', '增肌', '健康維持', '其他']
@@ -236,7 +246,7 @@ async function sendQuestion(userId, questionNumber) {
     let message;
 
     if (question.type === 'quick_reply') {
-      // 建立 Quick Reply 按鈕 - 回到穩定版本
+      // 建立 Quick Reply 按鈕
       const quickReplyItems = question.options.map(option => ({
         type: 'action',
         action: {
@@ -317,7 +327,7 @@ async function logToSheet(action, userId, questionIndex, answer) {
   }
 }
 
-// 儲存完整問卷結果 - 修正資料對應
+// 儲存完整問卷結果 - 重寫版本
 async function saveQuestionnaireResult(userId, userState) {
   try {
     const authClient = await auth.getClient();
@@ -327,31 +337,26 @@ async function saveQuestionnaireResult(userId, userState) {
     const values = [[
       userId, // A: 用戶ID
       userState.answers[1] || '', // B: 姓名
-      userState.answers[2] || '', // C: 年齡
-      Array.isArray(userState.answers[3]) ? userState.answers[3].join(', ') : (userState.answers[3] || ''), // D: 運動項目
-      Array.isArray(userState.answers[4]) ? userState.answers[4].join(', ') : (userState.answers[4] || ''), // E: 健身資訊
-      Array.isArray(userState.answers[5]) ? userState.answers[5].join(', ') : (userState.answers[5] || ''), // F: 運動時間
-      Array.isArray(userState.answers[6]) ? userState.answers[6].join(', ') : (userState.answers[6] || ''), // G: 健身目標
-      timestamp // H: 完成時間
+      userState.answers[2] || '', // C: 電話
+      userState.answers[3] || '', // D: Email
+      userState.answers[4] || '', // E: 年齡
+      Array.isArray(userState.answers[5]) ? userState.answers[5].join(', ') : (userState.answers[5] || ''), // F: 運動項目
+      Array.isArray(userState.answers[6]) ? userState.answers[6].join(', ') : (userState.answers[6] || ''), // G: 健身資訊
+      Array.isArray(userState.answers[7]) ? userState.answers[7].join(', ') : (userState.answers[7] || ''), // H: 運動時間
+      Array.isArray(userState.answers[8]) ? userState.answers[8].join(', ') : (userState.answers[8] || ''), // I: 健身目標
+      timestamp // J: 完成時間
     ]];
 
     console.log('準備儲存的資料:', values[0]); // 加入除錯訊息
 
-    // 先清除舊的錯誤資料，然後寫入新資料
-    await sheets.spreadsheets.values.clear({
-      auth: authClient,
-      spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
-      range: '問卷結果!A:H'
-    });
-
-    // 寫入標題行
+    // 先建立標題行
     await sheets.spreadsheets.values.update({
       auth: authClient,
       spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
-      range: '問卷結果!A1:H1',
+      range: '問卷結果!A1:J1',
       valueInputOption: 'RAW',
       resource: {
-        values: [['用戶ID', '姓名', '年齡', '運動項目', '健身資訊', '運動時間', '健身目標', '完成時間']]
+        values: [['用戶ID', '姓名', '電話', 'Email', '年齡', '運動項目', '健身資訊', '運動時間', '健身目標', '完成時間']]
       }
     });
 
@@ -359,7 +364,7 @@ async function saveQuestionnaireResult(userId, userState) {
     await sheets.spreadsheets.values.append({
       auth: authClient,
       spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
-      range: '問卷結果!A2:H',
+      range: '問卷結果!A2:J',
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: { values }
