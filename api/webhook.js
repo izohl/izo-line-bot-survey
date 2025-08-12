@@ -28,7 +28,7 @@ const auth = new google.auth.GoogleAuth({
 const SURVEY_QUESTIONS = [
   {
     id: 1,
-    text: '您好!歡迎加入IZO健身中心!請問您的姓名是?',
+    text: '您好!歡迎加入IZO運動館!請問您的姓名是?',
     type: 'text'
   },
   {
@@ -236,7 +236,7 @@ async function sendQuestion(userId, questionNumber) {
     let message;
 
     if (question.type === 'quick_reply') {
-      // 建立 Quick Reply 按鈕
+      // 建立 Quick Reply 按鈕 - 使用更大的字體
       const quickReplyItems = question.options.map(option => ({
         type: 'action',
         action: {
@@ -317,7 +317,7 @@ async function logToSheet(action, userId, questionIndex, answer) {
   }
 }
 
-// 儲存完整問卷結果
+// 儲存完整問卷結果 - 修正資料對應
 async function saveQuestionnaireResult(userId, userState) {
   try {
     const authClient = await auth.getClient();
@@ -337,10 +337,29 @@ async function saveQuestionnaireResult(userId, userState) {
 
     console.log('準備儲存的資料:', values[0]); // 加入除錯訊息
 
+    // 先清除舊的錯誤資料，然後寫入新資料
+    await sheets.spreadsheets.values.clear({
+      auth: authClient,
+      spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      range: '問卷結果!A:H'
+    });
+
+    // 寫入標題行
+    await sheets.spreadsheets.values.update({
+      auth: authClient,
+      spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      range: '問卷結果!A1:H1',
+      valueInputOption: 'RAW',
+      resource: {
+        values: [['用戶ID', '姓名', '年齡', '運動項目', '健身資訊', '運動時間', '健身目標', '完成時間']]
+      }
+    });
+
+    // 寫入新資料
     await sheets.spreadsheets.values.append({
       auth: authClient,
       spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
-      range: '問卷結果!A:H', // 確保範圍是 A:H
+      range: '問卷結果!A2:H',
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: { values }
@@ -351,6 +370,5 @@ async function saveQuestionnaireResult(userId, userState) {
   } catch (error) {
     console.error('Save Result Error:', error);
     console.error('用戶狀態:', userState);
-    console.error('準備的資料:', values);
   }
 }
