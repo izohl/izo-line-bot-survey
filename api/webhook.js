@@ -44,31 +44,31 @@ const SURVEY_QUESTIONS = [
   {
     id: 4,
     text: '請問您的年齡是?',
-    type: 'button',
+    type: 'quick_reply',
     options: ['18-25', '26-35', '36-45', '46+']
   },
   {
     id: 5,
-    text: '您最喜歡的運動項目是?', // 移除 (可多選)
-    type: 'button',
+    text: '您最喜歡的運動項目是?',
+    type: 'quick_reply',
     options: ['重訓', '有氧', '瑜珈', '游泳', '其他']
   },
   {
     id: 6,
-    text: '您希望收到什麼樣的健身資訊?', // 移除 (可多選)
-    type: 'button',
+    text: '您希望收到什麼樣的健身資訊?',
+    type: 'quick_reply',
     options: ['課程資訊', '營養建議', '運動技巧', '優惠活動']
   },
   {
     id: 7,
-    text: '您通常什麼時間可以運動?', // 移除 (可多選)
-    type: 'button',
+    text: '您通常什麼時間可以運動?',
+    type: 'quick_reply',
     options: ['早上', '下午', '晚上']
   },
   {
     id: 8,
     text: '您有特別的健身目標嗎?',
-    type: 'button',
+    type: 'quick_reply',
     options: ['減重', '增肌', '健康維持', '其他']
   }
 ];
@@ -227,8 +227,8 @@ async function sendQuestion(userId, questionNumber) {
 
     if (question.type === 'text') {
       message = { type: 'text', text: question.text };
-    } else if (question.type === 'button') {
-      const buttons = question.options.map(option => ({
+    } else if (question.type === 'quick_reply') {
+      const quickReplyItems = question.options.map(option => ({
         type: 'action',
         action: {
           type: 'message',
@@ -238,17 +238,10 @@ async function sendQuestion(userId, questionNumber) {
       }));
 
       message = {
-        type: 'template',
-        altText: question.text,
-        template: {
-          type: 'buttons',
-          thumbnailImageUrl: 'https://example.com/thumbnail.jpg', // 可以替換為您的圖片URL
-          imageAspectRatio: 'rectangle',
-          imageSize: 'cover',
-          imageBackgroundColor: '#FFFFFF',
-          title: '請選擇',
-          text: question.text,
-          actions: buttons
+        type: 'text',
+        text: `第${questionNumber}題: ${question.text}`,
+        quickReply: {
+          items: quickReplyItems
         }
       };
     }
@@ -256,8 +249,8 @@ async function sendQuestion(userId, questionNumber) {
     await client.pushMessage(userId, message);
     await logToSheet('發送問題', userId, question.id, question.text);
   } catch (error) {
-      console.error('Send Question Error:', error);
-      await logToSheet('錯誤', userId, 0, `發送問題錯誤: ${error.message}`);
+    console.error('Send Question Error:', error);
+    await logToSheet('錯誤', userId, 0, `發送問題錯誤: ${error.message}`);
   }
 }
 
@@ -267,7 +260,7 @@ async function completeSurvey(userId) {
     const userState = userStates.get(userId);
     if (userState) {
       await saveQuestionnaireResult(userId, userState);
-      await client.pushMessage(userId, { type: 'text', text: '感謝您完成問卷！' });
+      await client.pushMessage(userId, { type: 'text', text: '🎉 問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!\n\n 提示：輸入「測試問題」可以重新開始問卷。' });
       await logToSheet('問卷完成', userId, 0, '問卷已完成');
     }
   } catch (error) {
