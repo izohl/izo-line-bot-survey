@@ -1,4 +1,4 @@
-const line = require('@line/bot-sdk');
+const { Client } = require('@line/bot-sdk');
 const { google } = require('googleapis');
 
 // LINE Bot 設定
@@ -67,7 +67,7 @@ const SURVEY_QUESTIONS = [
 const userStates = new Map();
 
 // 建立 LINE Bot 客戶端
-const client = line(config);
+const client = new Client(config);
 
 // 主要 webhook 處理函數
 module.exports = async (req, res) => {
@@ -95,7 +95,7 @@ module.exports = async (req, res) => {
   if (req.method === 'POST') {
     try {
       // 驗證 LINE 簽名
-      if (!line.validateSignature(req.body, req.headers['x-line-signature'], config.channelSecret)) {
+      if (!client.verify(req.body, req.headers['x-line-signature'])) {
         console.error('Invalid signature');
         return res.status(401).json({ error: 'Invalid signature' });
       }
