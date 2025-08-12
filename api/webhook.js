@@ -200,7 +200,7 @@ async function handleTextMessage(userId, message) {
     
     // 儲存答案
     if (currentQuestion.type === 'quick_reply') {
-      // 處理多選答案 - 簡化邏輯
+      // 處理多選答案 - 修正邏輯
       if (!userState.answers[currentQuestion.id]) {
         userState.answers[currentQuestion.id] = [];
       }
@@ -209,7 +209,7 @@ async function handleTextMessage(userId, message) {
       // 記錄答案到 Google Sheets
       await logToSheet('用戶回答', userId, currentQuestion.id, message);
       
-      // 自動進入下一題（簡化多選處理）
+      // 檢查是否還有下一題
       if (userState.currentQuestion < SURVEY_QUESTIONS.length) {
         userState.currentQuestion++;
         await sendQuestion(userId, userState.currentQuestion);
@@ -327,7 +327,7 @@ async function logToSheet(action, userId, questionIndex, answer) {
   }
 }
 
-// 儲存完整問卷結果 - 重寫版本
+// 儲存完整問卷結果 - 修正版本
 async function saveQuestionnaireResult(userId, userState) {
   try {
     const authClient = await auth.getClient();
