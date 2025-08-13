@@ -33,7 +33,7 @@ const SURVEY_QUESTIONS = [
   },
   {
     id: 2,
-    text: '請問您的電話是?',
+    text: '請問您的電話號碼是?',
     type: 'text'
   },
   {
@@ -44,31 +44,31 @@ const SURVEY_QUESTIONS = [
   {
     id: 4,
     text: '請問您的年齡是?',
-    type: 'button',
+    type: 'quick_reply',
     options: ['18-25', '26-35', '36-45', '46+']
   },
   {
     id: 5,
-    text: '您最喜歡的運動項目是?', // 移除 (可多選)
-    type: 'button',
+    text: '您最喜歡的運動項目是?(可多選)',
+    type: 'quick_reply',
     options: ['重訓', '有氧', '瑜珈', '游泳', '其他']
   },
   {
     id: 6,
-    text: '您希望收到什麼樣的健身資訊?', // 移除 (可多選)
-    type: 'button',
+    text: '您希望收到什麼樣的健身資訊?(可多選)',
+    type: 'quick_reply',
     options: ['課程資訊', '營養建議', '運動技巧', '優惠活動']
   },
   {
     id: 7,
-    text: '您通常什麼時間可以運動?', // 移除 (可多選)
-    type: 'button',
+    text: '您通常什麼時間可以運動?(可多選)',
+    type: 'quick_reply',
     options: ['早上', '下午', '晚上']
   },
   {
     id: 8,
     text: '您有特別的健身目標嗎?',
-    type: 'button',
+    type: 'quick_reply',
     options: ['減重', '增肌', '健康維持', '其他']
   }
 ];
@@ -127,24 +127,36 @@ module.exports = async (req, res) => {
 
 // 處理 LINE 事件
 async function handleEvent(event) {
-  if (event.type === 'message' && event.message.type === 'text') {
-    await handleTextMessage(event.source.userId, event.message.text);
-  } else if (event.type === 'follow') {
-    await handleFollowEvent(event.source.userId);
+  try {
+    if (event.type === 'message' && event.message.type === 'text') {
+      await handleTextMessage(event.source.userId, event.message.text);
+    } else if (event.type === 'follow') {
+      await handleFollowEvent(event.source.userId);
+    }
+  } catch (error) {
+    console.error('Handle Event Error:', error);
   }
 }
 
 // 處理追蹤事件（新用戶）
 async function handleFollowEvent(userId) {
-  await logToSheet('新用戶', userId, 0, '追蹤');
-  // 初始化用戶狀態並開始問卷
-  userStates.set(userId, {
-    currentQuestion: 1,
-    answers: {},
-    startTime: new Date().toISOString()
-  });
-  await client.pushMessage(userId, { type: 'text', text: '您好!歡迎加入IZO運動館!請問您的姓名是?' });
-  await logToSheet('發送問題', userId, 1, '姓名');
+  try {
+    // 初始化用戶狀態
+    userStates.set(userId, {
+      currentQuestion: 1,
+      answers: {},
+      startTime: new Date().toISOString()
+    });
+
+    // 發送歡迎訊息和第一題
+    await sendQuestion(userId, 1);
+    
+    // 記錄到 Google Sheets
+    await logToSheet('新用戶追蹤', userId, 0, '開始問卷');
+    
+  } catch (error) {
+    console.error('Follow Event Error:', error);
+  }
 }
 
 // 處理文字訊息
@@ -173,49 +185,57 @@ async function handleTextMessage(userId, message) {
       return; // 重要：這裡要 return，避免繼續執行
     }
 
-    let userState = userStates.get(userId);
-
-    // 如果沒有用戶狀態，表示問卷已完成或未開始，重新開始問卷
+    const userState = userStates.get(userId);
+    
     if (!userState) {
-      userState = {
-        currentQuestion: 1,
-        answers: {},
-        startTime: new Date().toISOString()
-      };
-      userStates.set(userId, userState);
-      await client.pushMessage(userId, { type: 'text', text: '您好!歡迎加入IZO運動館!請問您的姓名是?' });
-      await logToSheet('發送問題', userId, 1, '姓名');
+      // 如果沒有狀態，發送說明訊息
+      await client.pushMessage(userId, {
+        type: 'text',
+        text: '您好！請輸入「測試問題」來開始問卷，或直接回答問題。'
+      });
       return;
     }
 
-    const currentQuestionIndex = userState.currentQuestion;
-    const question = SURVEY_QUESTIONS[currentQuestionIndex - 1];
-
-    if (!question) {
-      // 如果沒有找到問題，表示問卷已完成，但狀態未清除
-      await completeSurvey(userId);
-      userStates.delete(userId);
-      return;
-    }
-
+    const currentQuestion = SURVEY_QUESTIONS[userState.currentQuestion - 1];
+    
     // 儲存答案
-    userState.answers[question.id] = message;
-    await logToSheet('用戶回答', userId, question.id, message);
-
-    // 推進到下一題
-    userState.currentQuestion++;
-
-    if (userState.currentQuestion > SURVEY_QUESTIONS.length) {
-      // 問卷完成
-      await completeSurvey(userId);
-      userStates.delete(userId); // 清除用戶狀態
+    if (currentQuestion.type === 'quick_reply') {
+      // 處理多選答案 - 修正邏輯
+      if (!userState.answers[currentQuestion.id]) {
+        userState.answers[currentQuestion.id] = [];
+      }
+      userState.answers[currentQuestion.id].push(message);
+      
+      // 記錄答案到 Google Sheets
+      await logToSheet('用戶回答', userId, currentQuestion.id, message);
+      
+      // 檢查是否還有下一題
+      if (userState.currentQuestion < SURVEY_QUESTIONS.length) {
+        userState.currentQuestion++;
+        await sendQuestion(userId, userState.currentQuestion);
+      } else {
+        // 問卷完成
+        await completeSurvey(userId);
+      }
     } else {
-      // 發送下一題
-      await sendQuestion(userId, userState.currentQuestion);
+      // 單選題
+      userState.answers[currentQuestion.id] = message;
+      
+      // 記錄答案到 Google Sheets
+      await logToSheet('用戶回答', userId, currentQuestion.id, message);
+
+      // 檢查是否還有下一題
+      if (userState.currentQuestion < SURVEY_QUESTIONS.length) {
+        userState.currentQuestion++;
+        await sendQuestion(userId, userState.currentQuestion);
+      } else {
+        // 問卷完成
+        await completeSurvey(userId);
+      }
     }
+    
   } catch (error) {
-    console.error('Handle Text Message Error:', error);
-    await logToSheet('錯誤', userId, 0, `處理文字訊息錯誤: ${error.message}`);
+    console.error('Text Message Error:', error);
   }
 }
 
@@ -225,10 +245,9 @@ async function sendQuestion(userId, questionNumber) {
     const question = SURVEY_QUESTIONS[questionNumber - 1];
     let message;
 
-    if (question.type === 'text') {
-      message = { type: 'text', text: question.text };
-    } else if (question.type === 'button') {
-      const buttons = question.options.map(option => ({
+    if (question.type === 'quick_reply') {
+      // 建立 Quick Reply 按鈕
+      const quickReplyItems = question.options.map(option => ({
         type: 'action',
         action: {
           type: 'message',
@@ -238,26 +257,23 @@ async function sendQuestion(userId, questionNumber) {
       }));
 
       message = {
-        type: 'template',
-        altText: question.text,
-        template: {
-          type: 'buttons',
-          thumbnailImageUrl: 'https://example.com/thumbnail.jpg', // 可以替換為您的圖片URL
-          imageAspectRatio: 'rectangle',
-          imageSize: 'cover',
-          imageBackgroundColor: '#FFFFFF',
-          title: '請選擇',
-          text: question.text,
-          actions: buttons
+        type: 'text',
+        text: `第${questionNumber}題: ${question.text}`,
+        quickReply: {
+          items: quickReplyItems
         }
+      };
+    } else {
+      message = {
+        type: 'text',
+        text: `第${questionNumber}題: ${question.text}`
       };
     }
 
     await client.pushMessage(userId, message);
-    await logToSheet('發送問題', userId, question.id, question.text);
+    
   } catch (error) {
-      console.error('Send Question Error:', error);
-      await logToSheet('錯誤', userId, 0, `發送問題錯誤: ${error.message}`);
+    console.error('Send Question Error:', error);
   }
 }
 
@@ -265,18 +281,53 @@ async function sendQuestion(userId, questionNumber) {
 async function completeSurvey(userId) {
   try {
     const userState = userStates.get(userId);
-    if (userState) {
-      await saveQuestionnaireResult(userId, userState);
-      await client.pushMessage(userId, { type: 'text', text: '感謝您完成問卷！' });
-      await logToSheet('問卷完成', userId, 0, '問卷已完成');
-    }
+    
+    // 發送完成訊息
+    const completionMessage = {
+      type: 'text',
+      text: '🎉 問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!\n\n 提示：輸入「測試問題」可以重新開始問卷。'
+    };
+    
+    await client.pushMessage(userId, completionMessage);
+
+    // 儲存完整結果到 Google Sheets
+    await saveQuestionnaireResult(userId, userState);
+
+    // 清除用戶狀態
+    userStates.delete(userId);
+    
   } catch (error) {
     console.error('Complete Survey Error:', error);
-    await logToSheet('錯誤', userId, 0, `完成問卷錯誤: ${error.message}`);
   }
 }
 
-// 儲存完整問卷結果
+// 記錄到 Google Sheets
+async function logToSheet(action, userId, questionIndex, answer) {
+  try {
+    const authClient = await auth.getClient();
+    const timestamp = new Date().toISOString();
+    
+    const values = [
+      [timestamp, action, userId, questionIndex, answer]
+    ];
+
+    await sheets.spreadsheets.values.append({
+      auth: authClient,
+      spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      range: '工作表1!A:E',
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values }
+    });
+
+    console.log('Log to Sheet Success:', action, userId);
+    
+  } catch (error) {
+    console.error('Log to Sheet Error:', error);
+  }
+}
+
+// 儲存完整問卷結果 - 修正版本
 async function saveQuestionnaireResult(userId, userState) {
   try {
     const authClient = await auth.getClient();
@@ -289,69 +340,40 @@ async function saveQuestionnaireResult(userId, userState) {
       userState.answers[2] || '', // C: 電話
       userState.answers[3] || '', // D: Email
       userState.answers[4] || '', // E: 年齡
-      userState.answers[5] || '', // F: 運動項目
-      userState.answers[6] || '', // G: 健身資訊
-      userState.answers[7] || '', // H: 運動時間
-      userState.answers[8] || '', // I: 健身目標
+      Array.isArray(userState.answers[5]) ? userState.answers[5].join(', ') : (userState.answers[5] || ''), // F: 運動項目
+      Array.isArray(userState.answers[6]) ? userState.answers[6].join(', ') : (userState.answers[6] || ''), // G: 健身資訊
+      Array.isArray(userState.answers[7]) ? userState.answers[7].join(', ') : (userState.answers[7] || ''), // H: 運動時間
+      Array.isArray(userState.answers[8]) ? userState.answers[8].join(', ') : (userState.answers[8] || ''), // I: 健身目標
       timestamp // J: 完成時間
     ]];
 
-    // 檢查並建立標題行
-    const resultSheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-    const resultSheetName = '問卷結果';
-    const range = `${resultSheetName}!A1:J1`; // Updated to J for 10 columns
+    console.log('準備儲存的資料:', values[0]); // 加入除錯訊息
 
-    // 檢查標題行是否存在，如果不存在則寫入
-    const getResponse = await sheets.spreadsheets.values.get({
+    // 先建立標題行
+    await sheets.spreadsheets.values.update({
       auth: authClient,
-      spreadsheetId: resultSheetId,
-      range: range,
-    });
-
-    if (!getResponse.data.values || getResponse.data.values.length === 0) {
-      const headerValues = [
-        ['用戶ID', '姓名', '電話', 'Email', '年齡', '運動項目', '健身資訊', '運動時間', '健身目標', '完成時間']
-      ];
-      await sheets.spreadsheets.values.update({
-        auth: authClient,
-        spreadsheetId: resultSheetId,
-        range: range,
-        valueInputOption: 'RAW',
-        resource: { values: headerValues },
-      });
-      console.log('問卷結果表標題已建立。');
-    }
-
-    // 將資料寫入問卷結果表
-    await sheets.spreadsheets.values.append({
-      auth: authClient,
-      spreadsheetId: resultSheetId,
-      range: `${resultSheetName}!A:J`, // Append to column J
+      spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      range: '問卷結果!A1:J1',
       valueInputOption: 'RAW',
-      resource: { values: values },
+      resource: {
+        values: [['用戶ID', '姓名', '電話', 'Email', '年齡', '運動項目', '健身資訊', '運動時間', '健身目標', '完成時間']]
+      }
     });
-    console.log('問卷結果已儲存。');
-  } catch (error) {
-    console.error('Save Questionnaire Result Error:', error);
-    await logToSheet('錯誤', userId, 0, `儲存問卷結果錯誤: ${error.message}`);
-  }
-}
 
-// 記錄到 Google Sheets (工作表1)
-async function logToSheet(action, userId, questionIndex, answer) {
-  try {
-    const authClient = await auth.getClient();
-    const timestamp = new Date().toISOString();
-    const values = [[timestamp, action, userId, questionIndex, answer]];
-
+    // 寫入新資料
     await sheets.spreadsheets.values.append({
       auth: authClient,
       spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
-      range: '工作表1!A:E',
+      range: '問卷結果!A2:J',
       valueInputOption: 'RAW',
-      resource: { values: values },
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values }
     });
+
+    console.log('Save Result Success:', userId);
+    
   } catch (error) {
-    console.error('Log to Sheet Error:', error);
+    console.error('Save Result Error:', error);
+    console.error('用戶狀態:', userState);
   }
 }
