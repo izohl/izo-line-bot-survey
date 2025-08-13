@@ -76,12 +76,62 @@ const SURVEY_QUESTIONS = [
 // 用戶狀態儲存（在記憶體中，生產環境建議使用資料庫）
 const userStates = new Map();
 
+// 請求隊列管理
+const requestQueue = [];
+let isProcessingQueue = false;
+
 // 建立 LINE Bot 客戶端
 const client = new Client(config);
 
 // 延遲函數 - 大幅增加延遲時間
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 帶重試機制的訊息發送
+async function sendMessageWithRetry(userId, message, maxRetries = 5) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await client.pushMessage(userId, message);
+      console.log(`訊息發送成功: ${userId}`);
+      return true;
+    } catch (error) {
+      if (error.statusCode === 429 && i < maxRetries - 1) {
+        const waitTime = Math.pow(2, i) * 60000; // 指數退避：1分鐘、2分鐘、4分鐘...
+        console.log(`429 錯誤，等待 ${waitTime/1000} 秒後重試... (第 ${i+1} 次重試)`);
+        await delay(waitTime);
+        continue;
+      }
+      console.error(`訊息發送失敗: ${error.message}`);
+      throw error;
+    }
+  }
+  throw new Error('重試次數已用完');
+}
+
+// 處理請求隊列
+async function processQueue() {
+  if (isProcessingQueue || requestQueue.length === 0) {
+    return;
+  }
+
+  isProcessingQueue = true;
+  
+  while (requestQueue.length > 0) {
+    const { userId, message, resolve, reject } = requestQueue.shift();
+    
+    try {
+      await sendMessageWithRetry(userId, message);
+      resolve();
+    } catch (error) {
+      reject(error);
+    }
+    
+    // 隊列處理間隔
+    await delay(10000); // 10 秒間隔
+  }
+  
+  isProcessingQueue = false;
 }
 
 // 主要 webhook 處理函數
@@ -109,9 +159,6 @@ module.exports = async (req, res) => {
   // 處理 POST 請求（LINE webhook）
   if (req.method === 'POST') {
     try {
-      // 簡化簽名驗證 - 暫時跳過
-      // 注意：在生產環境中應該要驗證簽名
-      
       const events = req.body.events;
       
       if (events && events.length > 0) {
@@ -142,14 +189,21 @@ async function handleEvent(event) {
 // 處理追蹤事件（新用戶）
 async function handleFollowEvent(userId) {
   await logToSheet('新用戶', userId, 0, '追蹤');
-  // 初始化用戶狀態並開始問卷
+  
   userStates.set(userId, {
     currentQuestion: 1,
     answers: {},
     startTime: new Date().toISOString()
   });
-  await client.pushMessage(userId, { type: 'text', text: '您好!歡迎加入IZO運動館!請問您的姓名是?' });
-  await delay(3000); // 延遲 3 秒
+  
+  // 使用隊列發送訊息
+  const message = { type: 'text', text: '您好!歡迎加入IZO運動館!請問您的姓名是?' };
+  await new Promise((resolve, reject) => {
+    requestQueue.push({ userId, message, resolve, reject });
+    processQueue();
+  });
+  
+  await delay(5000); // 5 秒延遲
   await logToSheet('發送問題', userId, 1, '姓名');
 }
 
@@ -158,31 +212,27 @@ async function handleTextMessage(userId, message) {
   try {
     // 檢查特殊指令
     if (message === '測試問題') {
-      // 重置用戶狀態並開始問卷
       userStates.set(userId, {
         currentQuestion: 1,
         answers: {},
         startTime: new Date().toISOString()
       });
       
-      // 發送開始訊息
-      await client.pushMessage(userId, {
-        type: 'text',
-        text: '🧪 測試模式啟動！開始問卷...'
+      // 使用隊列發送訊息
+      const startMessage = { type: 'text', text: '🧪 測試模式啟動！開始問卷...' };
+      await new Promise((resolve, reject) => {
+        requestQueue.push({ userId, message: startMessage, resolve, reject });
+        processQueue();
       });
-      await delay(3000); // 延遲 3 秒
       
-      // 發送第一題
+      await delay(5000); // 5 秒延遲
       await sendQuestion(userId, 1);
-      
-      // 記錄測試重置
       await logToSheet('測試重置', userId, 0, '測試問題指令');
-      return; // 重要：這裡要 return，避免繼續執行
+      return;
     }
 
     let userState = userStates.get(userId);
 
-    // 如果沒有用戶狀態，表示問卷已完成或未開始，重新開始問卷
     if (!userState) {
       userState = {
         currentQuestion: 1,
@@ -190,8 +240,14 @@ async function handleTextMessage(userId, message) {
         startTime: new Date().toISOString()
       };
       userStates.set(userId, userState);
-      await client.pushMessage(userId, { type: 'text', text: '您好!歡迎加入IZO運動館!請問您的姓名是?' });
-      await delay(3000); // 延遲 3 秒
+      
+      const welcomeMessage = { type: 'text', text: '您好!歡迎加入IZO運動館!請問您的姓名是?' };
+      await new Promise((resolve, reject) => {
+        requestQueue.push({ userId, message: welcomeMessage, resolve, reject });
+        processQueue();
+      });
+      
+      await delay(5000); // 5 秒延遲
       await logToSheet('發送問題', userId, 1, '姓名');
       return;
     }
@@ -200,7 +256,6 @@ async function handleTextMessage(userId, message) {
     const question = SURVEY_QUESTIONS[currentQuestionIndex - 1];
 
     if (!question) {
-      // 如果沒有找到問題，表示問卷已完成，但狀態未清除
       await completeSurvey(userId);
       userStates.delete(userId);
       return;
@@ -214,12 +269,10 @@ async function handleTextMessage(userId, message) {
     userState.currentQuestion++;
 
     if (userState.currentQuestion > SURVEY_QUESTIONS.length) {
-      // 問卷完成
       await completeSurvey(userId);
-      userStates.delete(userId); // 清除用戶狀態
+      userStates.delete(userId);
     } else {
-      // 延遲 4 秒後發送下一題（大幅增加延遲）
-      await delay(4000);
+      await delay(10000); // 10 秒延遲
       await sendQuestion(userId, userState.currentQuestion);
     }
   } catch (error) {
@@ -255,8 +308,13 @@ async function sendQuestion(userId, questionNumber) {
       };
     }
 
-    await client.pushMessage(userId, message);
-    await delay(3000); // 延遲 3 秒
+    // 使用隊列發送訊息
+    await new Promise((resolve, reject) => {
+      requestQueue.push({ userId, message, resolve, reject });
+      processQueue();
+    });
+    
+    await delay(5000); // 5 秒延遲
     await logToSheet('發送問題', userId, question.id, question.text);
   } catch (error) {
     console.error('Send Question Error:', error);
@@ -270,8 +328,19 @@ async function completeSurvey(userId) {
     const userState = userStates.get(userId);
     if (userState) {
       await saveQuestionnaireResult(userId, userState);
-      await client.pushMessage(userId, { type: 'text', text: '🎉 問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!\n\n 提示：輸入「測試問題」可以重新開始問卷。' });
-      await delay(3000); // 延遲 3 秒
+      
+      const completionMessage = { 
+        type: 'text', 
+        text: '🎉 問卷完成! 感謝您提供寶貴的資訊,我們會根據您的需求為您安排最適合的服務。如有任何問題,歡迎隨時詢問我們的服務人員!\n\n 提示：輸入「測試問題」可以重新開始問卷。' 
+      };
+      
+      // 使用隊列發送訊息
+      await new Promise((resolve, reject) => {
+        requestQueue.push({ userId, message: completionMessage, resolve, reject });
+        processQueue();
+      });
+      
+      await delay(5000); // 5 秒延遲
       await logToSheet('問卷完成', userId, 0, '問卷已完成');
     }
   } catch (error) {
@@ -286,26 +355,23 @@ async function saveQuestionnaireResult(userId, userState) {
     const authClient = await auth.getClient();
     const timestamp = new Date().toISOString();
     
-    // 準備資料，確保欄位順序正確
     const values = [[
-      userId, // A: 用戶ID
-      userState.answers[1] || '', // B: 姓名
-      userState.answers[2] || '', // C: 電話
-      userState.answers[3] || '', // D: Email
-      userState.answers[4] || '', // E: 年齡
-      userState.answers[5] || '', // F: 運動項目
-      userState.answers[6] || '', // G: 健身資訊
-      userState.answers[7] || '', // H: 運動時間
-      userState.answers[8] || '', // I: 健身目標
-      timestamp // J: 完成時間
+      userId,
+      userState.answers[1] || '',
+      userState.answers[2] || '',
+      userState.answers[3] || '',
+      userState.answers[4] || '',
+      userState.answers[5] || '',
+      userState.answers[6] || '',
+      userState.answers[7] || '',
+      userState.answers[8] || '',
+      timestamp
     ]];
 
-    // 檢查並建立標題行
     const resultSheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
     const resultSheetName = '問卷結果';
-    const range = `${resultSheetName}!A1:J1`; // Updated to J for 10 columns
+    const range = `${resultSheetName}!A1:J1`;
 
-    // 檢查標題行是否存在，如果不存在則寫入
     const getResponse = await sheets.spreadsheets.values.get({
       auth: authClient,
       spreadsheetId: resultSheetId,
@@ -326,11 +392,10 @@ async function saveQuestionnaireResult(userId, userState) {
       console.log('問卷結果表標題已建立。');
     }
 
-    // 將資料寫入問卷結果表
     await sheets.spreadsheets.values.append({
       auth: authClient,
       spreadsheetId: resultSheetId,
-      range: `${resultSheetName}!A:J`, // Append to column J
+      range: `${resultSheetName}!A:J`,
       valueInputOption: 'RAW',
       resource: { values: values },
     });
